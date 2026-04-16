@@ -86,9 +86,12 @@ jobs:
           if [ -z "$TAG" ]; then
             TAG="${GITHUB_SHA::8}"
           fi
+          BRANCH="${GITHUB_REF_NAME//\//-}"
+          BRANCH_SHA8="${BRANCH}-${GITHUB_SHA::8}"
           IMAGE="${{ inputs.harbor_url }}/${{ inputs.harbor_project }}/${{ inputs.image_name }}"
           echo "image_tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "image_full_name=${IMAGE}:${TAG}" >> "$GITHUB_OUTPUT"
+          echo "image_branch_sha8=${IMAGE}:${BRANCH_SHA8}" >> "$GITHUB_OUTPUT"
 
       - name: Log in to Harbor registry
         uses: docker/login-action@v3
@@ -105,6 +108,7 @@ jobs:
           push: true
           tags: |
             ${{ steps.meta.outputs.image_full_name }}
+            ${{ steps.meta.outputs.image_branch_sha8 }}
             ${{ inputs.harbor_url }}/${{ inputs.harbor_project }}/${{ inputs.image_name }}:latest
           build-args: |
             ${{ inputs.build_args }}
