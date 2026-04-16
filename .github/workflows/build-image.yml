@@ -1,4 +1,4 @@
-name: Vue – Build & Push to Harbor
+name: Build & Push image to Harbor
 
 on:
   workflow_call:
