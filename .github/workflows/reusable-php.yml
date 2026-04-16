@@ -1,0 +1,70 @@
+name: Reusable PHP Backend CI
+
+on:
+  workflow_call:
+    inputs:
+      php-version:
+        description: PHP version
+        required: false
+        type: string
+        default: "8.3"
+      working-directory:
+        description: Project working directory
+        required: false
+        type: string
+        default: "."
+      dependency-command:
+        description: Command used to install dependencies
+        required: false
+        type: string
+        default: composer install --no-interaction --no-progress --prefer-dist
+      test-command:
+        description: Command used to run tests
+        required: false
+        type: string
+        default: composer test
+      run-test:
+        description: Whether to execute test step
+        required: false
+        type: boolean
+        default: true
+      php-extensions:
+        description: Comma-separated PHP extensions
+        required: false
+        type: string
+        default: mbstring, intl, pdo_mysql
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ inputs.php-version }}
+          extensions: ${{ inputs.php-extensions }}
+          tools: composer:v2
+          coverage: none
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.composer/cache/files
+            ${{ inputs.working-directory }}/vendor
+          key: ${{ runner.os }}-php-${{ inputs.php-version }}-${{ hashFiles(format('{0}/composer.lock', inputs.working-directory)) }}
+          restore-keys: |
+            ${{ runner.os }}-php-${{ inputs.php-version }}-
+
+      - name: Install dependencies
+        run: ${{ inputs.dependency-command }}
+
+      - name: Run tests
+        if: ${{ inputs.run-test }}
+        run: ${{ inputs.test-command }}
