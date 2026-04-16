@@ -32,7 +32,7 @@ on:
         description: Comma-separated PHP extensions
         required: false
         type: string
-        default: mbstring, intl, pdo_mysql
+        default: mbstring,intl,pdo_mysql
 
 jobs:
   ci:
