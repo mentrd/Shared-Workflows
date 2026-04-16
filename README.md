@@ -45,7 +45,6 @@ vue-build.yml          vue-deploy.yml
 | `image_tag` | | short SHA | Docker image tag |
 | `dockerfile_path` | | `Dockerfile` | Path to the Dockerfile |
 | `build_context` | | `.` | Docker build context |
-| `node_version` | | `20` | Node.js version used during the build |
 | `build_args` | | – | Extra `docker build --build-arg` values (one per line) |
 
 ### Secrets
@@ -79,7 +78,6 @@ jobs:
       harbor_url:     harbor.example.com
       harbor_project: my-org
       image_name:     my-vue-app
-      node_version:   "20"
       # Optional multi-line build args
       build_args: |
         VITE_API_URL=https://api.example.com
@@ -198,11 +196,10 @@ jobs:
 ## Dockerfile usage
 
 Copy `docker/vue/Dockerfile` and `docker/vue/nginx.conf` into the root of your
-Vue project.  The Dockerfile accepts a `NODE_VERSION` build argument (default
-`20`) so you can pin the exact Node.js version without editing the file:
+Vue project. :
 
 ```bash
-docker build --build-arg NODE_VERSION=20 -t my-vue-app .
+docker build -t my-vue-app .
 ```
 
 The multi-stage build keeps the final image small – only nginx and the compiled
