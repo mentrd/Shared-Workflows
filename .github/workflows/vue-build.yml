@@ -6,11 +6,7 @@ on:
       harbor_url:
         description: 'Harbor registry URL (e.g. harbor.example.com)'
         required: true
-        type: string
-      env_file:
-        description: '.env file'
-        required: false
-        type: string        
+        type: string    
       harbor_project:
         description: 'Harbor project / namespace (e.g. my-org)'
         required: true
@@ -78,7 +74,7 @@ jobs:
         uses: actions/checkout@v5
 
       - name: 注入環境變數
-        run: echo "${{ inputs.env_file }}" > .env
+        run: echo "${{ vars.env_file }}" > .env
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
