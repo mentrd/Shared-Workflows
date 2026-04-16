@@ -41,6 +41,11 @@ on:
         required: false
         type: string
         default: ''
+      environment:
+        description: github env
+        required: false
+        type: string
+        default: ''
 
     secrets:
       harbor_username:
@@ -61,8 +66,9 @@ on:
 jobs:
   build:
     name: Build & push Docker image
-    runs-on: ubuntu-latest
-
+    runs-on: [self-hosted, ment-runner]
+    environment: ${{ inputs.environment }}
+    
     outputs:
       image_full_name: ${{ steps.meta.outputs.image_full_name }}
       image_tag: ${{ steps.meta.outputs.image_tag }}
