@@ -1,0 +1,56 @@
+name: Generic SSH Deploy Template
+
+on:
+  workflow_call:
+    inputs:
+      target_host:
+        description: '目標機器的 IP 或 Hostname'
+        required: true
+        type: string
+      target_user:
+        description: 'SSH 登入的使用者名稱'
+        required: true
+        type: string
+      image_full_name:
+        description: 'Docker Image 名稱 (含 Registry 路徑 tag)'
+        required: true
+        type: string
+      container_name:
+        description: '要運行的 Container 名稱'
+        required: true
+        type: string
+      run_options:
+        description: 'Docker run 的額外參數 (例如 -p 80:80 -v /data:/data)'
+        required: false
+        type: string
+        default: ''
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, ment-runner]
+    steps:
+      - name: Deploy Image via SSH
+        # 使用 Here Document (EOF) 將多行指令透過 SSH 送到遠端執行
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ inputs.target_user }}@${{ inputs.target_host }} << 'EOF'
+            set -e # 遇到錯誤即停止
+            
+            echo "1. 拉取最新 Image..."
+            docker pull ${{ inputs.image_full_name }}
+            
+            echo "2. 停止並移除舊容器 (若存在)..."
+            # 加上 || true 避免容器不存在時報錯中斷流程
+            docker stop ${{ inputs.container_name }} || true
+                        
+            echo "3. 啟動新容器..."
+            docker run -d \
+              --name ${{ inputs.container_name }}-new \
+              ${{ inputs.run_options }} \
+              ${{ inputs.image_full_name }}
+              
+            docker rm ${{ inputs.container_name }} || true
+            docker rename ${{ inputs.container_name }}-new ${{ inputs.container_name }} || true
+            
+            echo "4. 清理無用的懸空 Image (選用)..."
+            docker image prune -f
+          EOF
