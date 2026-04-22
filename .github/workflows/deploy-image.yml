@@ -45,6 +45,7 @@ jobs:
           ssh -o StrictHostKeyChecking=no ${{ inputs.target_user }}@${{ inputs.target_host }} << 'EOF'
             set -e # 遇到錯誤即停止
             
+            echo "0. Login ${{ inputs.harbor_url }}"
             echo "${{ secrets.harbor_password }}" | docker login ${{ inputs.harbor_url }} \
               -u "${{ secrets.harbor_username }}" --password-stdin
             
