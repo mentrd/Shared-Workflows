@@ -46,12 +46,8 @@ jobs:
             set -e # 遇到錯誤即停止
             
             echo "0. Loginttt ${{ inputs.harbor_url }}"
-            echo "${{ secrets.harbor_username }}"
-            echo "${{ secrets.harbor_password }}"
-            echo "loging"
-            
             echo "${{ secrets.harbor_password }}" | docker login ${{ inputs.harbor_url }} \
-              -u "${{ secrets.harbor_username }}" --password-stdin              
+              -u '${{ secrets.harbor_username }}' --password-stdin              
 
             echo "${{ secrets.harbor_username }}"
             echo "logined"
