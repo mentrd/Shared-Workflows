@@ -112,5 +112,7 @@ jobs:
             ${{ inputs.harbor_url }}/${{ inputs.harbor_project }}/${{ inputs.image_name }}:latest
           build-args: |
             ${{ inputs.build_args }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=min
+          # 從 Harbor 讀取快取
+          cache-from: type=registry,ref=${{ inputs.harbor_url }}/${{ inputs.harbor_project }}/${{ inputs.image_name }}:buildcache          
+          # 將快取寫入 Harbor (這樣就不會卡在 exporting to GitHub)
+          cache-to: type=registry,ref=${{ inputs.harbor_url }}/${{ inputs.harbor_project }}/${{ inputs.image_name }}:buildcache,mode=max
