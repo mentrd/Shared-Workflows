@@ -47,6 +47,7 @@ jobs:
             
             echo "0. Loginttt ${{ inputs.harbor_url }}"
             echo "${{ secrets.harbor_username }}"
+            echo "${{ secrets.harbor_password }}"
             echo "loging"
             
             echo "${{ secrets.harbor_password }}" | docker login ${{ inputs.harbor_url }} \
