@@ -3,6 +3,9 @@ name: Generic SSH Deploy Template
 on:
   workflow_call:
     inputs:
+      harbor_url: # 新增：Harbor 的網址 (例如 harbor.example.com)
+        required: true
+        type: string
       target_host:
         description: '目標機器的 IP 或 Hostname'
         required: true
@@ -24,6 +27,13 @@ on:
         required: false
         type: string
         default: ''
+    secrets:
+      harbor_username:
+        description: 'Harbor registry username'
+        required: true
+      harbor_password:
+        description: 'Harbor registry password / robot-account token'
+        required: true
 
 jobs:
   deploy:
@@ -34,6 +44,9 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=no ${{ inputs.target_user }}@${{ inputs.target_host }} << 'EOF'
             set -e # 遇到錯誤即停止
+            
+            echo "${{ secrets.harbor_password }}" | docker login ${{ inputs.harbor_url }} \
+              -u "${{ secrets.harbor_username }}" --password-stdin
             
             echo "1. 拉取最新 Image..."
             docker pull ${{ inputs.image_full_name }}
