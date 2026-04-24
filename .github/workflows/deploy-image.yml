@@ -50,7 +50,10 @@ on:
 
 jobs:
   deploy:
+    name: 🚀 Deploy Image via SSH
     runs-on: [self-hosted, ment-runner]
+    environment: ${{ inputs.environment }}
+
     steps:
       - name: Deploy Image via SSH
         # 使用 Here Document (EOF) 將多行指令透過 SSH 送到遠端執行
