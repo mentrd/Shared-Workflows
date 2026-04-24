@@ -27,6 +27,16 @@ on:
         required: false
         type: string
         default: ''
+      environment:
+        description: github env
+        required: false
+        type: string
+        default: ''
+      app_id:
+        description: APP ID (用於區分不同應用的環境變數)
+        required: false
+        type: string
+        default: ''
     secrets:
       harbor_username:
         description: 'Harbor registry username'
@@ -34,6 +44,9 @@ on:
       harbor_password:
         description: 'Harbor registry password / robot-account token'
         required: true
+      apollo_secret:
+        description: 'Apollo Config Service secret (if needed)'
+        required: false
 
 jobs:
   deploy:
@@ -62,6 +75,9 @@ jobs:
             echo "3. 啟動新容器..."
             docker run -d \
               --name ${{ inputs.container_name }}-new \
+              -e ENV_TAG=${{ inputs.environment }} \
+              -e APP_ID=${{ inputs.app_id }} \
+              -e APOLLO_SECRET=${{ secrets.apollo_secret }} \
               ${{ inputs.run_options }} \
               ${{ inputs.image_full_name }}
               
