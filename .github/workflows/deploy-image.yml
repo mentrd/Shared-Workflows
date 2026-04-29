@@ -10,10 +10,6 @@ on:
         description: '目標機器的 IP 或 Hostname'
         required: true
         type: string
-      target_user:
-        description: 'SSH 登入的使用者名稱'
-        required: true
-        type: string
       image_full_name:
         description: 'Docker Image 名稱 (含 Registry 路徑 tag)'
         required: true
@@ -33,11 +29,14 @@ on:
         type: string
         default: ''
       app_id:
-        description: APP ID (用於區分不同應用的環境變數)
+        description: APP ID (APOLLO用於區分不同應用的環境變數)
         required: false
         type: string
         default: ''
     secrets:
+      target_user:
+        description: 'SSH 登入的使用者名稱'
+        required: true
       harbor_username:
         description: 'Harbor registry username'
         required: true
@@ -47,21 +46,26 @@ on:
       apollo_secret:
         description: 'Apollo Config Service secret (if needed)'
         required: false
-
 jobs:
   deploy:
     name: 🚀 Deploy Image via SSH
-    runs-on: [self-hosted, ment-runner]
+    runs-on: ${{ fromJSON(inputs.environment == 'prod' && '["self-hosted","ment-gcp"]' || '["self-hosted","ment-runner"]') }}
     environment: ${{ inputs.environment }}
 
     steps:
+      - name: Install SSH Key
+        uses: shimataro/ssh-key-action@v2
+        with:
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          if_key_exists: replace
+
       - name: Deploy Image via SSH
         # 使用 Here Document (EOF) 將多行指令透過 SSH 送到遠端執行
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ inputs.target_user }}@${{ inputs.target_host }} << 'EOF'
+          ssh -o StrictHostKeyChecking=no ${{ secrets.target_user }}@${{ inputs.target_host }} << 'EOF'
             set -e # 遇到錯誤即停止
             
-            echo "0. Loginttt ${{ inputs.harbor_url }}"
+            echo "0. Login ${{ inputs.harbor_url }}"
             echo "${{ secrets.harbor_password }}" | docker login ${{ inputs.harbor_url }} \
               -u '${{ secrets.harbor_username }}' --password-stdin              
 
