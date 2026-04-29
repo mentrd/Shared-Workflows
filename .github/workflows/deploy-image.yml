@@ -33,8 +33,13 @@ on:
         required: false
         type: string
         default: ''
-    secrets:
       target_user:
+        description: '棄用：SSH 登入的使用者名稱，請改用 secrets.target_ssh_user'
+        required: false
+        type: string
+        default: ''
+    secrets:
+      target_ssh_user:
         description: 'SSH 登入的使用者名稱'
         required: true
       harbor_username:
@@ -62,7 +67,7 @@ jobs:
       - name: Deploy Image via SSH
         # 使用 Here Document (EOF) 將多行指令透過 SSH 送到遠端執行
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.target_user }}@${{ inputs.target_host }} << 'EOF'
+          ssh -o StrictHostKeyChecking=no ${{ secrets.target_ssh_user }}@${{ inputs.target_host }} << 'EOF'
             set -e # 遇到錯誤即停止
             
             echo "0. Login ${{ inputs.harbor_url }}"
