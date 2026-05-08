@@ -7,7 +7,7 @@ on:
         required: true
         type: string
       target_host:
-        description: '目標機器的 IP 或 Hostname，支援逗點分隔多台 (例如 10.0.0.1,10.0.0.2)'
+        description: '目標機器，可傳逗號分隔(例如 10.0.0.1,10.0.0.2) 或 JSON array 字串(例如 ["10.0.0.1","10.0.0.2"])'
         required: true
         type: string
       image_full_name:
@@ -52,14 +52,65 @@ on:
         description: 'Apollo Config Service secret (if needed)'
         required: false
 jobs:
+  normalize-target-host:
+    name: Normalize target hosts input
+    runs-on: ${{ fromJSON(inputs.environment == 'prod' && '["self-hosted","ment-gcp"]' || '["self-hosted","ment-runner"]') }}
+    outputs:
+      target_hosts_json: ${{ steps.normalize.outputs.target_hosts_json }}
+    steps:
+      - name: Normalize target_host to JSON array
+        id: normalize
+        shell: bash
+        env:
+          RAW_TARGET_HOST: ${{ inputs.target_host }}
+        run: |
+          python3 - << 'PY'
+          import json
+          import os
+          import sys
+
+          raw = os.environ.get("RAW_TARGET_HOST", "").strip()
+          if not raw:
+              print("target_host is required", file=sys.stderr)
+              sys.exit(1)
+
+          hosts = []
+          if raw.startswith("["):
+              try:
+                  parsed = json.loads(raw)
+              except json.JSONDecodeError as exc:
+                  print(f"target_host JSON parse error: {exc}", file=sys.stderr)
+                  sys.exit(1)
+
+              if not isinstance(parsed, list):
+                  print("target_host JSON must be an array", file=sys.stderr)
+                  sys.exit(1)
+
+              hosts = [str(item).strip() for item in parsed]
+          else:
+              hosts = [item.strip() for item in raw.split(",")]
+
+          hosts = [item for item in hosts if item]
+          if not hosts:
+              print("target_host contains no valid hosts", file=sys.stderr)
+              sys.exit(1)
+
+          normalized = json.dumps(hosts, separators=(",", ":"))
+          print(f"Normalized target_host: {normalized}")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write(f"target_hosts_json={normalized}\n")
+          PY
+
   deploy:
     name: 🚀 Deploy Image via SSH (${{ matrix.target_host }})
+    needs: normalize-target-host
     runs-on: ${{ fromJSON(inputs.environment == 'prod' && '["self-hosted","ment-gcp"]' || '["self-hosted","ment-runner"]') }}
     environment: ${{ inputs.environment }}
     strategy:
       fail-fast: false
       matrix:
-        target_host: ${{ fromJSON(format('["{0}"]', replace(replace(inputs.target_host, ' ', ''), ',', '","'))) }}
+        target_host: ${{ fromJSON(needs.normalize-target-host.outputs.target_hosts_json) }}
 
     steps:
       - name: Install SSH Key
