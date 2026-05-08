@@ -7,7 +7,7 @@ on:
         required: true
         type: string
       target_host:
-        description: '目標機器的 IP 或 Hostname'
+        description: '目標機器的 IP 或 Hostname，支援逗點分隔多台 (例如 10.0.0.1,10.0.0.2)'
         required: true
         type: string
       image_full_name:
@@ -53,9 +53,13 @@ on:
         required: false
 jobs:
   deploy:
-    name: 🚀 Deploy Image via SSH
+    name: 🚀 Deploy Image via SSH (${{ matrix.target_host }})
     runs-on: ${{ fromJSON(inputs.environment == 'prod' && '["self-hosted","ment-gcp"]' || '["self-hosted","ment-runner"]') }}
     environment: ${{ inputs.environment }}
+    strategy:
+      fail-fast: false
+      matrix:
+        target_host: ${{ fromJSON(format('["{0}"]', replace(replace(inputs.target_host, ' ', ''), ',', '","'))) }}
 
     steps:
       - name: Install SSH Key
@@ -68,7 +72,7 @@ jobs:
       - name: Deploy Image via SSH
         # 使用 Here Document (EOF) 將多行指令透過 SSH 送到遠端執行
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.target_ssh_user }}@${{ inputs.target_host }} << 'EOF'
+          ssh -o StrictHostKeyChecking=no ${{ secrets.target_ssh_user }}@${{ matrix.target_host }} << 'EOF'
             set -e # 遇到錯誤即停止
             
             echo "0. Login ${{ inputs.harbor_url }}"
