@@ -1,0 +1,209 @@
+name: Generic SSH Deploy (Docker Compose)
+
+on:
+  workflow_call:
+    inputs:
+      harbor_url:
+        description: 'Harbor 的網址 (例如 harbor.example.com)'
+        required: true
+        type: string
+      target_host:
+        description: '目標機器，可傳逗號分隔(例如 10.0.0.1,10.0.0.2) 或 JSON array 字串(例如 ["10.0.0.1","10.0.0.2"])'
+        required: true
+        type: string
+      image_full_name:
+        description: 'Docker Image 名稱 (含 Registry 路徑 tag)'
+        required: true
+        type: string
+      container_name:
+        description: '服務/專案名稱 (用於遠端部署目錄名稱)'
+        required: true
+        type: string
+      compose_file:
+        description: '呼叫端 repo 中 docker-compose.yml 的相對路徑'
+        required: false
+        type: string
+        default: 'docker-compose.yml'
+      deploy_dir:
+        description: '遠端機器上的部署目錄 (預設 /data/deploy/<container_name>)'
+        required: false
+        type: string
+        default: ''
+      environment:
+        description: github env
+        required: false
+        type: string
+        default: ''
+      app_id:
+        description: APP ID (APOLLO用於區分不同應用的環境變數)
+        required: false
+        type: string
+        default: ''
+      healthcheck_timeout:
+        description: '健康檢查等待秒數 (預設 60)'
+        required: false
+        type: number
+        default: 60
+    secrets:
+      target_ssh_user:
+        description: 'SSH 登入的使用者名稱'
+        required: true
+      harbor_username:
+        description: 'Harbor registry username'
+        required: true
+      harbor_password:
+        description: 'Harbor registry password / robot-account token'
+        required: true
+      apollo_secret:
+        description: 'Apollo Config Service secret (if needed)'
+        required: false
+jobs:
+  normalize-target-host:
+    name: Normalize target hosts input
+    runs-on: ${{ fromJSON(inputs.environment == 'prod' && '["self-hosted","ment-gcp"]' || '["self-hosted","ment-runner"]') }}
+    outputs:
+      target_hosts_json: ${{ steps.normalize.outputs.target_hosts_json }}
+    steps:
+      - name: Normalize target_host to JSON array
+        id: normalize
+        shell: bash
+        env:
+          RAW_TARGET_HOST: ${{ inputs.target_host }}
+        run: |
+          python3 - << 'PY'
+          import json
+          import os
+          import sys
+
+          raw = os.environ.get("RAW_TARGET_HOST", "").strip()
+          if not raw:
+              print("target_host is required", file=sys.stderr)
+              sys.exit(1)
+
+          hosts = []
+          if raw.startswith("["):
+              try:
+                  parsed = json.loads(raw)
+              except json.JSONDecodeError as exc:
+                  print(f"target_host JSON parse error: {exc}", file=sys.stderr)
+                  sys.exit(1)
+
+              if not isinstance(parsed, list):
+                  print("target_host JSON must be an array", file=sys.stderr)
+                  sys.exit(1)
+
+              hosts = [str(item).strip() for item in parsed]
+          else:
+              hosts = [item.strip() for item in raw.split(",")]
+
+          hosts = [item for item in hosts if item]
+          if not hosts:
+              print("target_host contains no valid hosts", file=sys.stderr)
+              sys.exit(1)
+
+          normalized = json.dumps(hosts, separators=(",", ":"))
+          print(f"Normalized target_host: {normalized}")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write(f"target_hosts_json={normalized}\n")
+          PY
+
+  deploy:
+    name: 🚀 Deploy Image via SSH (${{ matrix.target_host }})
+    needs: normalize-target-host
+    runs-on: ${{ fromJSON(inputs.environment == 'prod' && '["self-hosted","ment-gcp"]' || '["self-hosted","ment-runner"]') }}
+    environment: ${{ inputs.environment }}
+    strategy:
+      fail-fast: false
+      matrix:
+        target_host: ${{ fromJSON(needs.normalize-target-host.outputs.target_hosts_json) }}
+
+    env:
+      DEPLOY_DIR: ${{ inputs.deploy_dir != '' && inputs.deploy_dir || format('/data/deploy/{0}', inputs.container_name) }}
+      SSH_TARGET: ${{ secrets.target_ssh_user }}@${{ matrix.target_host }}
+      SSH_OPTS: -o StrictHostKeyChecking=no
+
+    steps:
+      - name: Checkout caller repo (取得 docker-compose.yml)
+        uses: actions/checkout@v4
+
+      - name: Install SSH Key
+        uses: shimataro/ssh-key-action@v2
+        with:
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          known_hosts: "unnecessary"
+          if_key_exists: replace
+
+      - name: 建立遠端部署目錄
+        run: |
+          ssh ${{ env.SSH_OPTS }} ${{ env.SSH_TARGET }} "mkdir -p ${{ env.DEPLOY_DIR }}"
+
+      - name: 複製 docker-compose.yml 到遠端
+        run: |
+          scp ${{ env.SSH_OPTS }} ${{ inputs.compose_file }} ${{ env.SSH_TARGET }}:${{ env.DEPLOY_DIR }}/docker-compose.yml
+
+      - name: Deploy via Docker Compose (零停機 + 自動回滾)
+        run: |
+          ssh ${{ env.SSH_OPTS }} ${{ env.SSH_TARGET }} << 'EOF'
+            set -e
+
+            DEPLOY_DIR="${{ env.DEPLOY_DIR }}"
+            cd "$DEPLOY_DIR"
+
+            # ── 0. 登入 Harbor ──
+            echo "0. Login to ${{ inputs.harbor_url }}"
+            echo "${{ secrets.harbor_password }}" | docker login ${{ inputs.harbor_url }} \
+              -u '${{ secrets.harbor_username }}' --password-stdin
+            echo "Logged in."
+
+            # ── 1. 備份當前 compose 檔與 .env (供回滾用) ──
+            if [ -f docker-compose.yml.bak ]; then
+              cp docker-compose.yml.bak docker-compose.yml.bak2
+            fi
+            cp docker-compose.yml docker-compose.yml.bak
+          
+            if [ -f .env.bak ]; then
+              cp .env.bak .env.bak2
+            fi
+            cp .env .env.bak
+
+            # ── 2. 寫入環境變數 .env 供 compose 使用 ──
+            cat > .env << ENVEOF
+            IMAGE_FULL_NAME=${{ inputs.image_full_name }}
+            ENV_TAG=${{ inputs.environment }}
+            APP_ID=${{ inputs.app_id }}
+            APOLLO_SECRET=${{ secrets.apollo_secret }}
+            ENVEOF
+
+            # ── 3. 拉取最新 Image ──
+            echo "1. 拉取最新 Image..."
+            docker compose pull
+
+            # ── 4. 滾動更新 (零停機) ──
+            echo "2. 啟動新容器 (rolling update)..."
+            docker compose up -d --remove-orphans --wait --wait-timeout ${{ inputs.healthcheck_timeout }}
+            UP_EXIT=$?
+
+            # ── 5. 健康檢查 ──
+            if [ $UP_EXIT -ne 0 ]; then
+              echo "❌ 容器啟動失敗或健康檢查未通過，執行回滾..."
+              if [ -f docker-compose.yml.bak ]; then
+                cp docker-compose.yml.bak docker-compose.yml
+                if [ -f .env.bak ]; then
+                  cp .env.bak .env
+                fi
+                docker compose pull
+                docker compose up -d --remove-orphans
+                echo "⏪ 已回滾至舊版 docker-compose.yml.bak"
+              else
+                echo "⚠️  無舊版本可回滾，請手動處理"
+              fi
+              exit 1
+            fi
+
+            echo "✅ 部署成功！"
+
+            # ── 6. 清理無用的懸空 Image ──
+            echo "3. 清理無用的懸空 Image..."
+            docker image prune -f
+          EOF
