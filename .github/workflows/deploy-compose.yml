@@ -25,7 +25,7 @@ on:
         type: string
         default: 'docker-compose.yml'
       deploy_dir:
-        description: '遠端機器上的部署目錄 (預設 /data/deploy/<container_name>)'
+        description: '遠端機器上的部署目錄 (預設 /data/<container_name>)'
         required: false
         type: string
         default: ''
@@ -119,7 +119,7 @@ jobs:
         target_host: ${{ fromJSON(needs.normalize-target-host.outputs.target_hosts_json) }}
 
     env:
-      DEPLOY_DIR: ${{ inputs.deploy_dir != '' && inputs.deploy_dir || format('/data/deploy/{0}', inputs.container_name) }}
+      DEPLOY_DIR: ${{ inputs.deploy_dir != '' && inputs.deploy_dir || format('/data/{0}', inputs.container_name) }}
       SSH_TARGET: ${{ secrets.target_ssh_user }}@${{ matrix.target_host }}
       SSH_OPTS: -o StrictHostKeyChecking=no
 
