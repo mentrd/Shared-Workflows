@@ -136,7 +136,7 @@ jobs:
 
       - name: 建立遠端部署目錄
         run: |
-          ssh ${{ env.SSH_OPTS }} ${{ env.SSH_TARGET }} "sudo mkdir -p ${{ env.DEPLOY_DIR }} && sudo chown $(whoami) ${{ env.DEPLOY_DIR }}"
+          ssh ${{ env.SSH_OPTS }} ${{ env.SSH_TARGET }} "sudo mkdir -p ${{ env.DEPLOY_DIR }} && sudo chown ${{ secrets.target_ssh_user }} ${{ env.DEPLOY_DIR }}"
 
       - name: 複製 docker-compose.yml 到遠端
         run: |
