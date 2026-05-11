@@ -166,13 +166,13 @@ jobs:
             fi
 
             # ── 2. 寫入環境變數 .env 供 compose 使用 ──
-            cat > .env <<- ENVEOF
-IMAGE_FULL_NAME=${{ inputs.image_full_name }}
-ENV_TAG=${{ inputs.environment }}
-APP_ID=${{ inputs.app_id }}
-APOLLO_SECRET=${{ secrets.apollo_secret }}
-CONTAINER_NAME=${{ inputs.container_name }}
-ENVEOF
+            {
+              echo "IMAGE_FULL_NAME=${{ inputs.image_full_name }}"
+              echo "ENV_TAG=${{ inputs.environment }}"
+              echo "APP_ID=${{ inputs.app_id }}"
+              echo "APOLLO_SECRET=${{ secrets.apollo_secret }}"
+              echo "CONTAINER_NAME=${{ inputs.container_name }}"
+            } > .env
 
             # ── 3. 拉取最新 Image ──
             echo "1. 拉取最新 Image..."
