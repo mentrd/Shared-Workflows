@@ -157,15 +157,13 @@ jobs:
             echo "Logged in."
 
             # ── 1. 備份當前 compose 檔與 .env (供回滾用) ──
-            if [ -f docker-compose.yml.bak ]; then
-              cp docker-compose.yml.bak docker-compose.yml.bak2
+            if [ -f docker-compose.yml ]; then
+              cp docker-compose.yml docker-compose.yml.bak
             fi
-            cp docker-compose.yml docker-compose.yml.bak
           
-            if [ -f .env.bak ]; then
-              cp .env.bak .env.bak2
+            if [ -f .env ]; then
+              cp .env .env.bak
             fi
-            cp .env .env.bak
 
             # ── 2. 寫入環境變數 .env 供 compose 使用 ──
             cat > .env << ENVEOF
