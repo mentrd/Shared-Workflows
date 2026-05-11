@@ -173,6 +173,7 @@ jobs:
             ENV_TAG=${{ inputs.environment }}
             APP_ID=${{ inputs.app_id }}
             APOLLO_SECRET=${{ secrets.apollo_secret }}
+            CONTAINER_NAME=${{ inputs.container_name }}
             ENVEOF
 
             # ── 3. 拉取最新 Image ──
