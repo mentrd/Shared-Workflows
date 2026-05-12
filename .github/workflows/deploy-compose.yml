@@ -136,7 +136,7 @@ jobs:
 
       - name: 建立遠端部署目錄
         run: |
-          ssh ${{ env.SSH_OPTS }} ${{ env.SSH_TARGET }} "sudo mkdir -p ${{ env.DEPLOY_DIR }} && sudo chown ${{ secrets.target_ssh_user }} ${{ env.DEPLOY_DIR }}"
+          ssh ${{ env.SSH_OPTS }} ${{ env.SSH_TARGET }} "sudo mkdir -p ${{ env.DEPLOY_DIR }} && sudo chown -R ${{ secrets.target_ssh_user }} ${{ env.DEPLOY_DIR }}"
 
       - name: 複製 docker-compose.yml 到遠端
         run: |
@@ -180,8 +180,8 @@ jobs:
 
             # ── 4. 滾動更新 (零停機) ──
             echo "2. 啟動新容器 (rolling update)..."
-            docker compose up -d --remove-orphans --wait --wait-timeout ${{ inputs.healthcheck_timeout }}
-            UP_EXIT=$?
+            UP_EXIT=0
+            docker compose up -d --remove-orphans --wait --wait-timeout ${{ inputs.healthcheck_timeout }} || UP_EXIT=$?
 
             # ── 5. 健康檢查 ──
             if [ $UP_EXIT -ne 0 ]; then
