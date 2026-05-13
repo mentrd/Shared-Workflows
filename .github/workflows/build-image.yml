@@ -62,7 +62,7 @@ on:
 jobs:
   build:
     name: Build & push Docker image
-    runs-on: [self-hosted, ment-runner]
+    runs-on: [self-hosted, ment-docker-runner]
     environment: ${{ inputs.environment }}
     
     outputs:
