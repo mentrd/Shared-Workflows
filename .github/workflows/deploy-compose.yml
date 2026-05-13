@@ -182,24 +182,10 @@ jobs:
             echo "2. 啟動新容器 (rolling update)..."
             docker compose up -d --remove-orphans
 
-            # ── 5. 等待 app 容器健康檢查 ──
+            # ── 5. 只等待 app service 健康檢查 ──
             UP_EXIT=0
             TIMEOUT=$(( ${{ inputs.healthcheck_timeout }} + 0 ))
-            ELAPSED=0
-            echo "等待容器 ${{ inputs.container_name }} 健康檢查 (timeout: ${TIMEOUT}s)..."
-            while [ $ELAPSED -lt $TIMEOUT ]; do
-              STATUS=$(docker inspect --format='{{`{{.State.Health.Status}}`}}' "${{ inputs.container_name }}" 2>/dev/null || echo "starting")
-              case "$STATUS" in
-                healthy)   echo "✅ 容器健康檢查通過"; break ;;
-                unhealthy) echo "❌ 容器健康檢查失敗"; UP_EXIT=1; break ;;
-              esac
-              sleep 5
-              ELAPSED=$((ELAPSED+5))
-            done
-            if [ "$STATUS" != "healthy" ]; then
-              echo "❌ 容器健康檢查超時或失敗 (status: $STATUS)"
-              UP_EXIT=1
-            fi
+            docker compose up -d --wait --wait-timeout "$TIMEOUT" app || UP_EXIT=$?
 
             if [ $UP_EXIT -ne 0 ]; then
               echo "❌ 容器啟動失敗或健康檢查未通過，執行回滾..."
