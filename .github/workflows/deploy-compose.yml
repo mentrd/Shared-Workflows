@@ -43,7 +43,7 @@ on:
         description: '健康檢查等待秒數 (預設 60)'
         required: false
         type: number
-        default: 60
+        default: 180
     secrets:
       target_ssh_user:
         description: 'SSH 登入的使用者名稱'
