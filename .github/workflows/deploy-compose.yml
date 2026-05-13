@@ -60,7 +60,7 @@ on:
 jobs:
   normalize-target-host:
     name: Normalize target hosts input
-    runs-on: ${{ fromJSON(inputs.environment == 'prod' && '["self-hosted","ment-gcp"]' || '["self-hosted","ment-docker-runner"]') }}
+    runs-on: ${{ fromJSON(inputs.environment == 'prod' && '["self-hosted","ment-gcp"]' || '["self-hosted","ment-runner"]') }}
     outputs:
       target_hosts_json: ${{ steps.normalize.outputs.target_hosts_json }}
     steps:
