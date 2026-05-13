@@ -6,7 +6,7 @@ on:
       harbor_url:
         description: 'Harbor registry URL (e.g. harbor.example.com)'
         required: true
-        type: string    
+        type: string
       harbor_project:
         description: 'Harbor project / namespace (e.g. my-org)'
         required: true
@@ -62,7 +62,7 @@ on:
 jobs:
   build:
     name: Build & push Docker image
-    runs-on: [self-hosted, ment-docker-runner]
+    runs-on: [self-hosted, ment-runner]
     environment: ${{ inputs.environment }}
     
     outputs:
@@ -114,6 +114,6 @@ jobs:
             ${{ inputs.build_args }}
             ENV_TAG=${{ inputs.environment }}
           # 從 Harbor 讀取快取
-          cache-from: type=registry,ref=${{ inputs.harbor_url }}/${{ inputs.harbor_project }}/${{ inputs.image_name }}:buildcache          
+          cache-from: type=registry,ref=${{ inputs.harbor_url }}/${{ inputs.harbor_project }}/${{ inputs.image_name }}:buildcache
           # 將快取寫入 Harbor (這樣就不會卡在 exporting to GitHub)
           cache-to: type=registry,ref=${{ inputs.harbor_url }}/${{ inputs.harbor_project }}/${{ inputs.image_name }}:buildcache,mode=max
