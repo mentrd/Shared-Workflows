@@ -40,10 +40,10 @@ on:
         type: string
         default: ''
       healthcheck_timeout:
-        description: '健康檢查等待秒數 (預設 60)'
+        description: '健康檢查等待秒數 (預設 180)'
         required: false
-        type: number
-        default: 180
+        type: string
+        default: '180'
     secrets:
       target_ssh_user:
         description: 'SSH 登入的使用者名稱'
@@ -180,10 +180,27 @@ jobs:
 
             # ── 4. 滾動更新 (零停機) ──
             echo "2. 啟動新容器 (rolling update)..."
-            UP_EXIT=0
-            docker compose up -d --remove-orphans --wait --wait-timeout ${{ inputs.healthcheck_timeout }} || UP_EXIT=$?
+            docker compose up -d --remove-orphans
 
-            # ── 5. 健康檢查 ──
+            # ── 5. 等待 app 容器健康檢查 ──
+            UP_EXIT=0
+            TIMEOUT=$(( ${{ inputs.healthcheck_timeout }} + 0 ))
+            ELAPSED=0
+            echo "等待容器 ${{ inputs.container_name }} 健康檢查 (timeout: ${TIMEOUT}s)..."
+            while [ $ELAPSED -lt $TIMEOUT ]; do
+              STATUS=$(docker inspect --format='{{`{{.State.Health.Status}}`}}' "${{ inputs.container_name }}" 2>/dev/null || echo "starting")
+              case "$STATUS" in
+                healthy)   echo "✅ 容器健康檢查通過"; break ;;
+                unhealthy) echo "❌ 容器健康檢查失敗"; UP_EXIT=1; break ;;
+              esac
+              sleep 5
+              ELAPSED=$((ELAPSED+5))
+            done
+            if [ "$STATUS" != "healthy" ]; then
+              echo "❌ 容器健康檢查超時或失敗 (status: $STATUS)"
+              UP_EXIT=1
+            fi
+
             if [ $UP_EXIT -ne 0 ]; then
               echo "❌ 容器啟動失敗或健康檢查未通過，執行回滾..."
               if [ -f docker-compose.yml.bak ]; then
