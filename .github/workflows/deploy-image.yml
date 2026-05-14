@@ -146,6 +146,7 @@ jobs:
               -e ENV_TAG=${{ inputs.environment }} \
               -e APP_ID=${{ inputs.app_id }} \
               -e APOLLO_SECRET=${{ secrets.apollo_secret }} \
+              -e BUILD_TIME=$(date +%Y-%m-%dT%H:%M:%S) \
               ${{ inputs.run_options }} \
               ${{ inputs.image_full_name }}
               
