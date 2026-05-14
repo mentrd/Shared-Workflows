@@ -113,6 +113,7 @@ jobs:
           build-args: |
             ${{ inputs.build_args }}
             ENV_TAG=${{ inputs.environment }}
+            BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           # 從 Harbor 讀取快取
           cache-from: type=registry,ref=${{ inputs.harbor_url }}/${{ inputs.harbor_project }}/${{ inputs.image_name }}:buildcache
           # 將快取寫入 Harbor (這樣就不會卡在 exporting to GitHub)
