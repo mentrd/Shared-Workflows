@@ -125,33 +125,33 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.target_ssh_user }}@${{ matrix.target_host }} << 'EOF'
             set -e # 遇到錯誤即停止
-            
+          
             echo "0. Login ${{ inputs.harbor_url }}"
             echo "${{ secrets.harbor_password }}" | docker login ${{ inputs.harbor_url }} \
               -u '${{ secrets.harbor_username }}' --password-stdin              
 
             echo "${{ secrets.harbor_username }}"
             echo "logined"
-            
+          
             echo "1. 拉取最新 Image..."
             docker pull ${{ inputs.image_full_name }}
-            
+          
             echo "2. 停止並移除舊容器 (若存在)..."
             # 加上 || true 避免容器不存在時報錯中斷流程
             docker stop ${{ inputs.container_name }} || true
-                        
+          
             echo "3. 啟動新容器..."
             docker run -d \
               --name ${{ inputs.container_name }}-new \
               -e ENV_TAG=${{ inputs.environment }} \
               -e APP_ID=${{ inputs.app_id }} \
-              -e APOLLO_SECRET=${{ secrets.apollo_secret }} \              
+              -e APOLLO_SECRET=${{ secrets.apollo_secret }} \
               ${{ inputs.run_options }} \
               ${{ inputs.image_full_name }}
-              
+          
             docker rm ${{ inputs.container_name }} || true
             docker rename ${{ inputs.container_name }}-new ${{ inputs.container_name }} || true
-            
+          
             echo "4. 清理無用的懸空 Image (選用)..."
             docker image prune -f
           EOF
