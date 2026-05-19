@@ -100,6 +100,10 @@ jobs:
           username: '${{ secrets.harbor_username }}'
           password: '${{ secrets.harbor_password }}'
 
+      - name: Set build time
+        id: build_time
+        run: echo "value=$(date -u +"%Y-%m-%dT%H:%M:%SZ")" >> "$GITHUB_OUTPUT"
+
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
@@ -113,7 +117,7 @@ jobs:
           build-args: |
             ${{ inputs.build_args }}
             ENV_TAG=${{ inputs.environment }}
-            BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+            BUILD_TIME=${{ steps.build_time.outputs.value }}
           # 從 Harbor 讀取快取
           cache-from: type=registry,ref=${{ inputs.harbor_url }}/${{ inputs.harbor_project }}/${{ inputs.image_name }}:buildcache
           # 將快取寫入 Harbor (這樣就不會卡在 exporting to GitHub)
