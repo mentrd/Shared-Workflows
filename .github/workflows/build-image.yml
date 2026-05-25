@@ -75,7 +75,7 @@ jobs:
 
       - name: 獲取環境變數配置（來自 Apollo Config Server）
         run: |
-          wget -O ./15-fetch-apollo-config.sh https://apollo.ment-tech.com/cd-scripts/15-fetch-apollo-config.sh
+          curl -L -o ./15-fetch-apollo-config.sh https://apollo.ment-tech.com/cd-scripts/15-fetch-apollo-config.sh
           chmod +x ./15-fetch-apollo-config.sh
           sh ./15-fetch-apollo-config.sh
           cat .env
