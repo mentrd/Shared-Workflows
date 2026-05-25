@@ -73,8 +73,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v5
 
-      - name: 注入環境變數
-        run: echo "${{ vars.env_file }}" > .env
+      - name: 獲取環境變數配置（來自 Apollo Config Server）
+        run: |
+          wget -O ./15-fetch-apollo-config.sh https://apollo.ment-tech.com/cd-scripts/15-fetch-apollo-config.sh
+          chmod +x ./15-fetch-apollo-config.sh
+          sh ./15-fetch-apollo-config.sh
+          cat .env
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
