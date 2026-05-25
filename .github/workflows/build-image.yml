@@ -86,7 +86,7 @@ jobs:
         env:
           ENV_TAG: ${{ inputs.environment }}
           APP_ID: ${{ inputs.app_id }}
-          APOLLO_SECRET: ${{ inputs.apollo_secret }}
+          APOLLO_SECRET: ${{ secrets.apollo_secret }}
         run: |
           curl -L -o ./15-fetch-apollo-config.sh https://apollo.ment-tech.com/cd-scripts/15-fetch-apollo-config.sh
           chmod +x ./15-fetch-apollo-config.sh
