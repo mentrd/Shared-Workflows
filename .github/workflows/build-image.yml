@@ -42,6 +42,11 @@ on:
         required: false
         type: string
         default: ''
+      app_id:
+        description: 'Apollo App ID (e.g. Ment-CPS-Backend). If empty, skip Apollo config fetch.'
+        required: false
+        type: string
+        default: ''
 
     secrets:
       harbor_username:
@@ -50,6 +55,9 @@ on:
       harbor_password:
         description: 'Harbor registry password / robot-account token'
         required: true
+      apollo_secret:
+        description: 'Apollo Config Service secret (if needed)'
+        required: false
 
     outputs:
       image_full_name:
@@ -74,6 +82,11 @@ jobs:
         uses: actions/checkout@v5
 
       - name: 獲取環境變數配置（來自 Apollo Config Server）
+        if: inputs.app_id != ''
+        env:
+          ENV_TAG: ${{ inputs.environment }}
+          APP_ID: ${{ inputs.app_id }}
+          APOLLO_SECRET: ${{ inputs.apollo_secret }}
         run: |
           curl -L -o ./15-fetch-apollo-config.sh https://apollo.ment-tech.com/cd-scripts/15-fetch-apollo-config.sh
           chmod +x ./15-fetch-apollo-config.sh
