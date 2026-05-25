@@ -131,10 +131,12 @@ jobs:
             ${{ steps.meta.outputs.image_full_name }}
             ${{ steps.meta.outputs.image_branch_sha8 }}
             ${{ inputs.harbor_url }}/${{ inputs.harbor_project }}/${{ inputs.image_name }}:latest
-          build-args: |
-            ${{ inputs.build_args }}
+          build-args: |            
+            APP_ID=${{ inputs.app_id }}
             ENV_TAG=${{ inputs.environment }}
+            APOLLO_SECRET=${{ secrets.apollo_secret }}
             BUILD_TIME=${{ steps.build_time.outputs.value }}
+            ${{ inputs.build_args }}
           # 從 Harbor 讀取快取
           cache-from: type=registry,ref=${{ inputs.harbor_url }}/${{ inputs.harbor_project }}/${{ inputs.image_name }}:buildcache
           # 將快取寫入 Harbor (這樣就不會卡在 exporting to GitHub)
