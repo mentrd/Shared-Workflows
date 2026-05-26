@@ -131,11 +131,11 @@ jobs:
             ${{ steps.meta.outputs.image_full_name }}
             ${{ steps.meta.outputs.image_branch_sha8 }}
             ${{ inputs.harbor_url }}/${{ inputs.harbor_project }}/${{ inputs.image_name }}:latest
-          build-args: |            
-            APP_ID=${{ inputs.app_id }}
-            ENV_TAG=${{ inputs.environment }}
-            APOLLO_SECRET=${{ secrets.apollo_secret }}
+          build-args: |
             BUILD_TIME=${{ steps.build_time.outputs.value }}
+            ${{ inputs.app_id != '' && format('APP_ID={0}', inputs.app_id) || '' }}
+            ${{ inputs.environment != '' && format('ENV_TAG={0}', inputs.environment) || '' }}
+            ${{ secrets.apollo_secret != '' && format('APOLLO_SECRET={0}', secrets.apollo_secret) || '' }}
             ${{ inputs.build_args }}
           # 從 Harbor 讀取快取
           cache-from: type=registry,ref=${{ inputs.harbor_url }}/${{ inputs.harbor_project }}/${{ inputs.image_name }}:buildcache
