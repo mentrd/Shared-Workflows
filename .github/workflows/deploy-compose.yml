@@ -180,8 +180,9 @@ jobs:
 
             # ── 4. 滾動更新 (零停機) ──
             echo "2. 啟動新容器 (rolling update)..."
+            docker compose -f docker-compose.yml.bak down || true
             docker compose up -d --remove-orphans
-
+            
             # ── 5. 只等待 app service 健康檢查 ──
             UP_EXIT=0
             TIMEOUT=$(( ${{ inputs.healthcheck_timeout }} + 0 ))
