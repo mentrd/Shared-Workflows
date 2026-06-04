@@ -1,0 +1,150 @@
+name: Build & Push image to Harbor
+
+on:
+  workflow_call:
+    inputs:
+      harbor_url:
+        description: 'Harbor registry URL (e.g. harbor.example.com)'
+        required: true
+        type: string
+      harbor_project:
+        description: 'Harbor project / namespace (e.g. my-org)'
+        required: true
+        type: string
+      image_name:
+        description: 'Docker image name (e.g. my-vue-app)'
+        required: true
+        type: string
+      image_tag:
+        description: 'Docker image tag (defaults to the short commit SHA)'
+        required: false
+        type: string
+        default: ''
+      dockerfile_path:
+        description: 'Path to the Dockerfile relative to the repository root'
+        required: false
+        type: string
+        default: 'Dockerfile'
+      build_context:
+        description: 'Docker build context path'
+        required: false
+        type: string
+        default: '.'
+      build_args:
+        description: |
+          Additional Docker build arguments.
+          Provide one argument per line in KEY=VALUE format.
+        required: false
+        type: string
+        default: ''
+      environment:
+        description: github env
+        required: false
+        type: string
+        default: ''
+      app_id:
+        description: 'Apollo App ID (e.g. Ment-CPS-Backend). If empty, skip Apollo config fetch.'
+        required: false
+        type: string
+        default: ''
+
+    secrets:
+      harbor_username:
+        description: 'Harbor registry username'
+        required: true
+      harbor_password:
+        description: 'Harbor registry password / robot-account token'
+        required: true
+      apollo_secret:
+        description: 'Apollo Config Service secret (if needed)'
+        required: false
+
+    outputs:
+      image_full_name:
+        description: 'Fully-qualified image name pushed to Harbor'
+        value: ${{ jobs.build.outputs.image_full_name }}
+      image_tag:
+        description: 'The image tag that was applied'
+        value: ${{ jobs.build.outputs.image_tag }}
+
+jobs:
+  build:
+    name: Build & push Docker image
+    runs-on: [self-hosted, ment-docker-runner]
+    environment: ${{ inputs.environment }}
+
+    outputs:
+      image_full_name: ${{ steps.meta.outputs.image_full_name }}
+      image_tag: ${{ steps.meta.outputs.image_tag }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: 獲取環境變數配置（來自 Apollo Config Server）
+        if: inputs.app_id != ''
+        env:
+          ENV_TAG: ${{ inputs.environment }}
+          APP_ID: ${{ inputs.app_id }}
+          APOLLO_SECRET: ${{ secrets.apollo_secret }}
+        run: |
+          curl -L -o ./15-fetch-apollo-config.sh https://apollo.ment-tech.com/cd-scripts/15-fetch-apollo-config.sh
+          chmod +x ./15-fetch-apollo-config.sh
+          sh ./15-fetch-apollo-config.sh
+          cat .env
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          cleanup: false
+
+      - name: Resolve image tag
+        id: meta
+        run: |
+          TAG="${{ inputs.image_tag }}"
+          if [ -z "$TAG" ]; then
+            TAG="${GITHUB_SHA::8}"
+          fi
+          BRANCH="${GITHUB_REF_NAME//\//-}"
+          BRANCH_SHA8="${BRANCH}-${GITHUB_SHA::8}"
+          IMAGE="${{ inputs.harbor_url }}/${{ inputs.harbor_project }}/${{ inputs.image_name }}"
+          echo "image_tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "image_full_name=${IMAGE}:${TAG}" >> "$GITHUB_OUTPUT"
+          echo "image_branch_sha8=${IMAGE}:${BRANCH_SHA8}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to Harbor registry
+        uses: docker/login-action@v3
+        with:
+          registry: '${{ inputs.harbor_url }}'
+          username: '${{ secrets.harbor_username }}'
+          password: '${{ secrets.harbor_password }}'
+
+      - name: Set build time
+        id: build_time
+        run: echo "value=$(date -u +"%Y-%m-%dT%H:%M:%SZ")" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ inputs.build_context }}
+          file: ${{ inputs.dockerfile_path }}
+          push: true
+          provenance: false
+          tags: |
+            ${{ steps.meta.outputs.image_full_name }}
+            ${{ steps.meta.outputs.image_branch_sha8 }}
+            ${{ inputs.harbor_url }}/${{ inputs.harbor_project }}/${{ inputs.image_name }}:latest
+          build-args: |
+            BUILD_TIME=${{ steps.build_time.outputs.value }}
+            ${{ inputs.app_id != '' && format('APP_ID={0}', inputs.app_id) || '' }}
+            ${{ inputs.environment != '' && format('ENV_TAG={0}', inputs.environment) || '' }}
+            ${{ secrets.apollo_secret != '' && format('APOLLO_SECRET={0}', secrets.apollo_secret) || '' }}
+            ${{ inputs.build_args }}
+          secret-envs: |
+            APOLLO_SECRET=${{ secrets.apollo_secret }}
+          # 從 Harbor 讀取快取（優先使用當前分支的快取，fallback 到 main）
+          cache-from: |
+            type=registry,ref=${{ inputs.harbor_url }}/${{ inputs.harbor_project }}/${{ inputs.image_name }}:cache-${{ github.ref_name }}
+            type=registry,ref=${{ inputs.harbor_url }}/${{ inputs.harbor_project }}/${{ inputs.image_name }}:cache-main
+          # 將快取寫入 Harbor（按分支區分，避免互相覆蓋）
+          cache-to: type=registry,ref=${{ inputs.harbor_url }}/${{ inputs.harbor_project }}/${{ inputs.image_name }}:cache-${{ github.ref_name }},mode=max
