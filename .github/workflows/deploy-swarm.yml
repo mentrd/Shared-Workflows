@@ -11,7 +11,7 @@ on:
         description: '服務/專案名稱 (stack name)'
         required: true
         type: string
-      env_tag:
+      environment:
         description: '環境標籤，對應 deploy/{env_tag}.env 檔案'
         required: true
         type: string
@@ -35,11 +35,11 @@ on:
 jobs:
   deploy:
     name: 🚀 Deploy Stack
-    runs-on: ${{ fromJSON(inputs.env_tag == 'prod' && '["self-hosted","gcp-swarm"]' || '["self-hosted","ment-swarm"]') }}
+    runs-on: ${{ fromJSON(inputs.environment == 'prod' && '["self-hosted","gcp-swarm"]' || '["self-hosted","ment-swarm"]') }}
 
     env:
       DEPLOY_DIR: /data/${{ inputs.stack_name }}
-      ENV_FILE: deploy/${{ inputs.env_tag }}.env
+      ENV_FILE: deploy/${{ inputs.environment }}.env
 
     steps:
       - name: Checkout caller repo
