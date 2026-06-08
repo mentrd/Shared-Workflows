@@ -88,15 +88,13 @@ jobs:
           echo ""
 
           # ── 初始化 NFS 目錄（如果啟用）──
-          if [ "${AUTO_INIT_NFS:-false}" == "true" ]; then
-            echo "🔧 Auto-initializing NFS directories..."
-            if [ -f "./init-nfs.sh" ]; then
-              bash ./init-nfs.sh || echo "⚠️  NFS initialization failed. Proceeding anyway..."
-            else
-              echo "⚠️  init-nfs.sh not found, skipping."
-            fi
-            echo ""
+          echo "🔧 Auto-initializing NFS directories..."
+          if [ -f "/data/nfs-scripts/init-nfs.sh" ]; then
+            bash /data/nfs-scripts/init-nfs.sh || echo "⚠️  NFS initialization failed. Proceeding anyway..."
+          else
+            echo "⚠️  init-nfs.sh not found, skipping."
           fi
+          echo ""
 
           # ── 部署 Stack ──
           docker stack deploy \
@@ -113,7 +111,13 @@ jobs:
       - name: Verify deployment & rollback on failure
         run: |
           set -e
-          STACK_NAME="${{ inputs.stack_name }}"
+          cd ${{ env.DEPLOY_DIR }}
+
+          # ── 載入 .env ──
+          set -a
+          source .env
+          set +a
+          
           TIMEOUT=${{ inputs.deploy_timeout }}
           ELAPSED=0
           INTERVAL=10
