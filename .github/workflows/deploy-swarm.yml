@@ -26,7 +26,6 @@ on:
         required: false
         type: string
         default: '180'
-
     secrets:
       apollo_secret:
         description: 'Apollo Config Service secret (if needed)'
@@ -36,6 +35,7 @@ jobs:
   deploy:
     name: 🚀 Deploy Stack
     runs-on: ${{ fromJSON(inputs.environment == 'prod' && '["self-hosted","gcp-swarm"]' || '["self-hosted","ment-swarm"]') }}
+    environment: ${{ inputs.environment }}
 
     env:
       DEPLOY_DIR: /data/${{ inputs.stack_name }}
