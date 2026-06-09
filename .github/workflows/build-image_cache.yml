@@ -1,0 +1,222 @@
+name: Build & Push image to Harbor
+
+on:
+  workflow_call:
+    inputs:
+      harbor_url:
+        description: 'Harbor registry URL (e.g. harbor.example.com)'
+        required: true
+        type: string
+      harbor_project:
+        description: 'Harbor project / namespace (e.g. my-org)'
+        required: true
+        type: string
+      image_name:
+        description: 'Docker image name (e.g. my-vue-app)'
+        required: true
+        type: string
+      image_tag:
+        description: 'Docker image tag (defaults to the short commit SHA)'
+        required: false
+        type: string
+        default: ''
+      dockerfile_path:
+        description: 'Path to the Dockerfile relative to the repository root'
+        required: false
+        type: string
+        default: 'Dockerfile'
+      build_context:
+        description: 'Docker build context path'
+        required: false
+        type: string
+        default: '.'
+      build_args:
+        description: |
+          Additional Docker build arguments.
+          Provide one argument per line in KEY=VALUE format.
+        required: false
+        type: string
+        default: ''
+      environment:
+        description: github env
+        required: false
+        type: string
+        default: ''
+      app_id:
+        description: 'Apollo App ID (e.g. Ment-CPS-Backend). If empty, skip Apollo config fetch.'
+        required: false
+        type: string
+        default: ''
+      base_image_enabled:
+        description: |
+          啟用 base image 強力快取（適合 PHP）。
+          會以 Dockerfile + base_hash_files 的內容 hash 當作 base image 的 tag，
+          hash 沒變就直接沿用 Harbor 上既有的 base，有變才重新 build 並推送。
+        required: false
+        type: boolean
+        default: false
+      base_target:
+        description: 'Dockerfile 中作為 base image 的 stage 名稱'
+        required: false
+        type: string
+        default: 'base'
+      base_hash_files:
+        description: |
+          除了 Dockerfile 以外，要一起納入 base image hash 計算的檔案清單（以空白分隔）。
+        required: false
+        type: string
+        default: 'composer.json composer.lock'
+      base_image_name:
+        description: 'base image 的 repository 名稱，預設為 <image_name>-base'
+        required: false
+        type: string
+        default: ''
+
+    secrets:
+      harbor_username:
+        description: 'Harbor registry username'
+        required: true
+      harbor_password:
+        description: 'Harbor registry password / robot-account token'
+        required: true
+      apollo_secret:
+        description: 'Apollo Config Service secret (if needed)'
+        required: false
+
+    outputs:
+      image_full_name:
+        description: 'Fully-qualified image name pushed to Harbor'
+        value: ${{ jobs.build.outputs.image_full_name }}
+      image_tag:
+        description: 'The image tag that was applied'
+        value: ${{ jobs.build.outputs.image_tag }}
+      base_image_ref:
+        description: 'Fully-qualified base image reference (only set when base_image_enabled)'
+        value: ${{ jobs.build.outputs.base_image_ref }}
+
+jobs:
+  build:
+    name: Build & push Docker image
+    runs-on: [self-hosted, ment-docker-runner]
+    environment: ${{ inputs.environment }}
+    
+    outputs:
+      image_full_name: ${{ steps.meta.outputs.image_full_name }}
+      image_tag: ${{ steps.meta.outputs.image_tag }}
+      base_image_ref: ${{ steps.base.outputs.base_ref }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: 獲取環境變數配置（來自 Apollo Config Server）
+        if: inputs.app_id != ''
+        env:
+          ENV_TAG: ${{ inputs.environment }}
+          APP_ID: ${{ inputs.app_id }}
+          APOLLO_SECRET: ${{ secrets.apollo_secret }}
+        run: |
+          curl -L -o ./15-fetch-apollo-config.sh https://apollo.ment-tech.com/cd-scripts/15-fetch-apollo-config.sh
+          chmod +x ./15-fetch-apollo-config.sh
+          sh ./15-fetch-apollo-config.sh
+          cat .env
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          cleanup: true
+
+      - name: Resolve image tag
+        id: meta
+        run: |
+          TAG="${{ inputs.image_tag }}"
+          if [ -z "$TAG" ]; then
+            TAG="${GITHUB_SHA::8}"
+          fi
+          BRANCH="${GITHUB_REF_NAME//\//-}"
+          BRANCH_SHA8="${BRANCH}-${GITHUB_SHA::8}"
+          IMAGE="${{ inputs.harbor_url }}/${{ inputs.harbor_project }}/${{ inputs.image_name }}"
+          echo "image_tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "image_full_name=${IMAGE}:${TAG}" >> "$GITHUB_OUTPUT"
+          echo "image_branch_sha8=${IMAGE}:${BRANCH_SHA8}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to Harbor registry
+        uses: docker/login-action@v3
+        with:
+          registry: '${{ inputs.harbor_url }}'
+          username: '${{ secrets.harbor_username }}'
+          password: '${{ secrets.harbor_password }}'
+
+      # ---------------------------------------------------------------------
+      # 強力快取：以 Dockerfile + composer.json/lock 的內容 hash 當作 base image tag。
+      # 不做任何存在性確認，完全交給「hash tag + registry inline cache」自動判斷：
+      #   hash 沒變 → cache 全命中，base build 幾乎秒過、push 為 no-op（等同沒 build）。
+      #   hash 有變 → 自動重新 build base，並以新的 hash tag 推送到 Harbor。
+      # ---------------------------------------------------------------------
+      - name: Resolve base image reference
+        id: base
+        if: ${{ inputs.base_image_enabled }}
+        run: |
+          HASH_INPUT=""
+          for f in ${{ inputs.dockerfile_path }} ${{ inputs.base_hash_files }}; do
+            if [ -f "$f" ]; then
+              FH=$(sha256sum "$f" | cut -d' ' -f1)
+              HASH_INPUT="${HASH_INPUT}${f}:${FH}\n"
+            else
+              echo "::warning::base hash file not found: $f"
+            fi
+          done
+          HASH=$(printf '%b' "$HASH_INPUT" | sha256sum | cut -d' ' -f1 | cut -c1-16)
+
+          BASE_NAME="${{ inputs.base_image_name }}"
+          if [ -z "$BASE_NAME" ]; then
+            BASE_NAME="${{ inputs.image_name }}-base"
+          fi
+          BASE_REF="${{ inputs.harbor_url }}/${{ inputs.harbor_project }}/${BASE_NAME}:${HASH}"
+
+          echo "base_hash=${HASH}" >> "$GITHUB_OUTPUT"
+          echo "base_ref=${BASE_REF}" >> "$GITHUB_OUTPUT"
+          echo "🏷️ base image = ${BASE_REF}（hash 相同即自動命中快取）"
+
+      - name: Build & push base image
+        if: ${{ inputs.base_image_enabled }}
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ inputs.build_context }}
+          file: ${{ inputs.dockerfile_path }}
+          target: ${{ inputs.base_target }}
+          push: true
+          provenance: false
+          tags: ${{ steps.base.outputs.base_ref }}
+          # 以 base image 自身的 hash tag 當快取來源：沒變就全命中，變了才真的重 build
+          cache-from: type=registry,ref=${{ steps.base.outputs.base_ref }}
+          cache-to: type=inline
+
+      - name: Set build time
+        id: build_time
+        run: echo "value=$(date -u +"%Y-%m-%dT%H:%M:%SZ")" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ inputs.build_context }}
+          file: ${{ inputs.dockerfile_path }}
+          push: true
+          provenance: false
+          tags: |
+            ${{ steps.meta.outputs.image_full_name }}
+            ${{ steps.meta.outputs.image_branch_sha8 }}
+            ${{ inputs.harbor_url }}/${{ inputs.harbor_project }}/${{ inputs.image_name }}:latest
+          build-args: |
+            BUILD_TIME=${{ steps.build_time.outputs.value }}
+            ${{ inputs.base_image_enabled && format('BASE_IMAGE={0}', steps.base.outputs.base_ref) || '' }}
+            ${{ inputs.app_id != '' && format('APP_ID={0}', inputs.app_id) || '' }}
+            ${{ inputs.environment != '' && format('ENV_TAG={0}', inputs.environment) || '' }}
+            ${{ secrets.apollo_secret != '' && format('APOLLO_SECRET={0}', secrets.apollo_secret) || '' }}
+            ${{ inputs.build_args }}
+          secret-envs: |
+            APOLLO_SECRET=${{ secrets.apollo_secret }}
+          # 從 Harbor 讀取快取
+          cache-from: type=registry,ref=${{ inputs.harbor_url }}/${{ inputs.harbor_project }}/${{ inputs.image_name }}:buildcache
+          # 將快取寫入 Harbor (這樣就不會卡在 exporting to GitHub)
+          cache-to: type=registry,ref=${{ inputs.harbor_url }}/${{ inputs.harbor_project }}/${{ inputs.image_name }}:buildcache,mode=max
