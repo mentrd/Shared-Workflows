@@ -47,6 +47,30 @@ on:
         required: false
         type: string
         default: ''
+      base_image_enabled:
+        description: |
+          啟用 base image 強力快取（適合 PHP）。
+          會以 Dockerfile + base_hash_files 的內容 hash 當作 base image 的 tag，
+          hash 沒變就直接沿用 Harbor 上既有的 base，有變才重新 build 並推送。
+        required: false
+        type: boolean
+        default: false
+      base_target:
+        description: 'Dockerfile 中作為 base image 的 stage 名稱'
+        required: false
+        type: string
+        default: 'base'
+      base_hash_files:
+        description: |
+          除了 Dockerfile 以外，要一起納入 base image hash 計算的檔案清單（以空白分隔）。
+        required: false
+        type: string
+        default: 'composer.json composer.lock'
+      base_image_name:
+        description: 'base image 的 repository 名稱，預設為 <image_name>-base'
+        required: false
+        type: string
+        default: ''
 
     secrets:
       harbor_username:
@@ -66,6 +90,9 @@ on:
       image_tag:
         description: 'The image tag that was applied'
         value: ${{ jobs.build.outputs.image_tag }}
+      base_image_ref:
+        description: 'Fully-qualified base image reference (only set when base_image_enabled)'
+        value: ${{ jobs.build.outputs.base_image_ref }}
 
 jobs:
   build:
@@ -76,6 +103,7 @@ jobs:
     outputs:
       image_full_name: ${{ steps.meta.outputs.image_full_name }}
       image_tag: ${{ steps.meta.outputs.image_tag }}
+      base_image_ref: ${{ steps.base.outputs.base_ref }}
 
     steps:
       - name: Checkout repository
@@ -96,7 +124,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
         with:
-          cleanup: false
+          cleanup: true
 
       - name: Resolve image tag
         id: meta
@@ -119,6 +147,51 @@ jobs:
           username: '${{ secrets.harbor_username }}'
           password: '${{ secrets.harbor_password }}'
 
+      # ---------------------------------------------------------------------
+      # 強力快取：以 Dockerfile + composer.json/lock 的內容 hash 當作 base image tag。
+      # 不做任何存在性確認，完全交給「hash tag + registry inline cache」自動判斷：
+      #   hash 沒變 → cache 全命中，base build 幾乎秒過、push 為 no-op（等同沒 build）。
+      #   hash 有變 → 自動重新 build base，並以新的 hash tag 推送到 Harbor。
+      # ---------------------------------------------------------------------
+      - name: Resolve base image reference
+        id: base
+        if: ${{ inputs.base_image_enabled }}
+        run: |
+          HASH_INPUT=""
+          for f in ${{ inputs.dockerfile_path }} ${{ inputs.base_hash_files }}; do
+            if [ -f "$f" ]; then
+              FH=$(sha256sum "$f" | cut -d' ' -f1)
+              HASH_INPUT="${HASH_INPUT}${f}:${FH}\n"
+            else
+              echo "::warning::base hash file not found: $f"
+            fi
+          done
+          HASH=$(printf '%b' "$HASH_INPUT" | sha256sum | cut -d' ' -f1 | cut -c1-16)
+
+          BASE_NAME="${{ inputs.base_image_name }}"
+          if [ -z "$BASE_NAME" ]; then
+            BASE_NAME="${{ inputs.image_name }}-base"
+          fi
+          BASE_REF="${{ inputs.harbor_url }}/${{ inputs.harbor_project }}/${BASE_NAME}:${HASH}"
+
+          echo "base_hash=${HASH}" >> "$GITHUB_OUTPUT"
+          echo "base_ref=${BASE_REF}" >> "$GITHUB_OUTPUT"
+          echo "🏷️ base image = ${BASE_REF}（hash 相同即自動命中快取）"
+
+      - name: Build & push base image
+        if: ${{ inputs.base_image_enabled }}
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ inputs.build_context }}
+          file: ${{ inputs.dockerfile_path }}
+          target: ${{ inputs.base_target }}
+          push: true
+          provenance: false
+          tags: ${{ steps.base.outputs.base_ref }}
+          # 以 base image 自身的 hash tag 當快取來源：沒變就全命中，變了才真的重 build
+          cache-from: type=registry,ref=${{ steps.base.outputs.base_ref }}
+          cache-to: type=inline
+
       - name: Set build time
         id: build_time
         run: echo "value=$(date -u +"%Y-%m-%dT%H:%M:%SZ")" >> "$GITHUB_OUTPUT"
@@ -136,6 +209,7 @@ jobs:
             ${{ inputs.harbor_url }}/${{ inputs.harbor_project }}/${{ inputs.image_name }}:latest
           build-args: |
             BUILD_TIME=${{ steps.build_time.outputs.value }}
+            ${{ inputs.base_image_enabled && format('BASE_IMAGE={0}', steps.base.outputs.base_ref) || '' }}
             ${{ inputs.app_id != '' && format('APP_ID={0}', inputs.app_id) || '' }}
             ${{ inputs.environment != '' && format('ENV_TAG={0}', inputs.environment) || '' }}
             ${{ secrets.apollo_secret != '' && format('APOLLO_SECRET={0}', secrets.apollo_secret) || '' }}
