@@ -58,6 +58,7 @@ jobs:
 
       - name: Prepare deploy directory
         run: |
+          rm -rf ${{ env.DEPLOY_DIR }}
           mkdir -p ${{ env.DEPLOY_DIR }}
           cp ${{ inputs.compose_file }} ${{ env.DEPLOY_DIR }}/docker-stack.yml
           cp ${{ env.ENV_FILE }} ${{ env.DEPLOY_DIR }}/.env
