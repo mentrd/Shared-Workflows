@@ -216,7 +216,3 @@ jobs:
             ${{ inputs.build_args }}
           secret-envs: |
             APOLLO_SECRET=${{ secrets.apollo_secret }}
-          # 從 Harbor 讀取快取
-          cache-from: type=registry,ref=${{ inputs.harbor_url }}/${{ inputs.harbor_project }}/${{ inputs.image_name }}:buildcache
-          # 將快取寫入 Harbor (這樣就不會卡在 exporting to GitHub)
-          cache-to: type=registry,ref=${{ inputs.harbor_url }}/${{ inputs.harbor_project }}/${{ inputs.image_name }}:buildcache,mode=max
