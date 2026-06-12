@@ -1,0 +1,204 @@
+name: Generic SSH Deploy (Docker Stack)
+
+on:
+  workflow_call:
+    inputs:
+      image_full_name:
+        description: 'Docker Image 名稱 (含 Registry 路徑 tag)'
+        required: true
+        type: string
+      stack_name:
+        description: '服務/專案名稱 (stack name)'
+        required: true
+        type: string
+      environment:
+        description: '環境標籤，對應 deploy/{env_tag}.env 檔案'
+        required: true
+        type: string
+        default: 'dev'
+      compose_file:
+        description: '呼叫端 repo 中 docker-stack.yml 的相對路徑'
+        required: false
+        type: string
+        default: 'deploy/docker-stack.yml'
+      deploy_timeout:
+        description: 'Stack deploy 後等待服務穩定的秒數 (預設 180)'
+        required: false
+        type: string
+        default: '180'
+    secrets:
+      apollo_secret:
+        description: 'Apollo Config Service secret (if needed)'
+        required: false
+
+jobs:
+  deploy:
+    name: 🚀 Deploy Stack
+    runs-on: ${{ fromJSON(inputs.environment == 'prod' && '["self-hosted","gcp-swarm"]' || '["self-hosted","ment-swarm"]') }}
+    environment: ${{ inputs.environment }}
+
+    env:
+      DEPLOY_DIR: /data/${{ inputs.stack_name }}
+      ENV_FILE: deploy/${{ inputs.environment }}.env
+
+    steps:
+      - name: Checkout caller repo
+        uses: actions/checkout@v4
+
+      - name: Validate required files
+        run: |
+          if [ ! -f "${{ env.ENV_FILE }}" ]; then
+            echo "❌ Env file not found: ${{ env.ENV_FILE }}"
+            exit 1
+          fi
+          if [ ! -f "${{ inputs.compose_file }}" ]; then
+            echo "❌ Compose file not found: ${{ inputs.compose_file }}"
+            exit 1
+          fi
+
+      - name: Resolve branch name
+        run: |
+          # 使用 GitHub 內建環境變數：PR 取 GITHUB_HEAD_REF（來源分支），其餘取 GITHUB_REF_NAME
+          # 註：pull_request 事件下 GITHUB_REF_NAME 會是 "<PR編號>/merge"，故 PR 需用 GITHUB_HEAD_REF
+          RAW_BRANCH="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
+
+          # 正規化為合法的 DNS label：轉小寫、非英數字元轉為 "-"、去除頭尾 "-"、限制 63 字元
+          SAN_BRANCH=$(printf '%s' "$RAW_BRANCH" \
+            | tr '[:upper:]' '[:lower:]' \
+            | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//' \
+            | cut -c1-63 \
+            | sed -E 's/-+$//')
+
+          echo "BRANCH_NAME=${SAN_BRANCH}" >> "$GITHUB_ENV"
+          echo "🔖 Branch (raw):       ${RAW_BRANCH}"
+          echo "🔖 Branch (sanitized): ${SAN_BRANCH}"
+
+      - name: Prepare deploy directory
+        run: |
+          rm -rf ${{ env.DEPLOY_DIR }}
+          mkdir -p ${{ env.DEPLOY_DIR }}
+          cp ${{ inputs.compose_file }} ${{ env.DEPLOY_DIR }}/docker-stack.yml
+          cp ${{ env.ENV_FILE }} ${{ env.DEPLOY_DIR }}/.env
+          echo "IMAGE_FULL_NAME=${{ inputs.image_full_name }}" >> ${{ env.DEPLOY_DIR }}/.env
+          echo "APOLLO_SECRET=${{ secrets.apollo_secret }}" >> ${{ env.DEPLOY_DIR }}/.env          
+
+      - name: Deploy stack
+        run: |
+          set -euo pipefail
+          cd ${{ env.DEPLOY_DIR }}
+
+          # ── 載入 .env ──
+          set -a
+          source .env
+          set +a
+
+          # ── 驗證必要變數 ──
+          : "${IMAGE_FULL_NAME:?❌ IMAGE_FULL_NAME is required}"
+          : "${STACK_NAME:?❌ STACK_NAME is required}"
+          : "${DOMAIN_HOST:?❌ DOMAIN_HOST is required}"
+
+          echo "🚀 Deploying stack: ${STACK_NAME}"
+          echo "   Image:  ${IMAGE_FULL_NAME}"
+          echo "   Domain: ${DOMAIN_HOST}"
+          echo "   Env:    ${ENV_TAG:-dev}"
+          echo ""
+
+          # ── 初始化 NFS 目錄（如果啟用）──
+          echo "🔧 Auto-initializing NFS directories..."
+          if [ -f "/data/nfs-scripts/init-nfs.sh" ]; then
+            bash /data/nfs-scripts/init-nfs.sh || echo "⚠️  NFS initialization failed. Proceeding anyway..."
+          else
+            echo "⚠️  init-nfs.sh not found, skipping."
+          fi
+          echo ""
+
+          # ── 部署 Stack ──
+          docker stack deploy \
+            --compose-file docker-stack.yml \
+            --with-registry-auth \
+            --prune \
+            "$STACK_NAME"
+
+          echo ""
+          echo "✅ Stack deployed successfully!"
+          echo "   Check status: docker stack services ${STACK_NAME}"
+          echo "   Check logs:   docker service logs ${STACK_NAME}_app"
+
+      - name: Verify deployment & rollback on failure
+        run: |
+          set -e
+          cd ${{ env.DEPLOY_DIR }}
+
+          # ── 載入 .env ──
+          set -a
+          source .env
+          set +a
+          
+          TIMEOUT=${{ inputs.deploy_timeout }}
+          ELAPSED=0
+          INTERVAL=10
+
+          # 取得該 stack 下所有 service
+          SERVICES=$(docker stack services "$STACK_NAME" --format "{{.Name}}" 2>/dev/null || echo "")
+
+          if [ -z "$SERVICES" ]; then
+            echo "❌ 找不到 stack: $STACK_NAME 的任何服務"
+            exit 1
+          fi
+
+          echo "⏳ 等待服務穩定..."
+          DEPLOY_OK=true
+
+          while [ $ELAPSED -lt $TIMEOUT ]; do
+            ALL_READY=true
+
+            for SERVICE in $SERVICES; do
+              REPLICAS=$(docker service ls --filter "name=${SERVICE}" --format "{{.Replicas}}" 2>/dev/null || echo "0/0")
+              CURRENT=$(echo "$REPLICAS" | cut -d'/' -f1)
+              DESIRED=$(echo "$REPLICAS" | cut -d'/' -f2)
+
+              # 跳過期望副本為 0 的服務（如未啟用的 queue/scheduler）
+              if [ "$DESIRED" = "0" ]; then
+                continue
+              fi
+
+              if [ "$CURRENT" != "$DESIRED" ]; then
+                ALL_READY=false
+                break
+              fi
+            done
+
+            if [ "$ALL_READY" = true ]; then
+              echo "✅ 所有服務已穩定"
+              exit 0
+            fi
+
+            echo "   等待中... (${ELAPSED}s/${TIMEOUT}s)"
+            sleep $INTERVAL
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+
+          # ── 部署超時，執行回滾 ──
+          echo ""
+          echo "❌ 部署超時 (${TIMEOUT}s)，開始回滾..."
+          echo ""
+
+          for SERVICE in $SERVICES; do
+            REPLICAS=$(docker service ls --filter "name=${SERVICE}" --format "{{.Replicas}}" 2>/dev/null || echo "0/0")
+            CURRENT=$(echo "$REPLICAS" | cut -d'/' -f1)
+            DESIRED=$(echo "$REPLICAS" | cut -d'/' -f2)
+
+            if [ "$DESIRED" != "0" ] && [ "$CURRENT" != "$DESIRED" ]; then
+              echo "⏪ Rolling back: $SERVICE"
+              docker service rollback "$SERVICE" --quiet 2>/dev/null || echo "   ⚠️  $SERVICE 無法回滾（可能無先前版本）"
+            fi
+          done
+
+          echo ""
+          echo "🔄 回滾完成，請檢查服務狀態："
+          docker stack services "$STACK_NAME"
+          exit 1
+
+      - name: Cleanup dangling images
+        if: always()
+        run: docker image prune -f || true
