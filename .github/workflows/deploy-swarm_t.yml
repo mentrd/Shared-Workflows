@@ -62,8 +62,11 @@ jobs:
           # 註：pull_request 事件下 GITHUB_REF_NAME 會是 "<PR編號>/merge"，故 PR 需用 GITHUB_HEAD_REF
           RAW_BRANCH="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
 
+          # 去掉開頭的 preview/ 前綴（例如 preview/payment-test → payment-test）
+          TRIMMED_BRANCH="${RAW_BRANCH#preview/}"
+
           # 正規化為合法的 DNS label：轉小寫、非英數字元轉為 "-"、去除頭尾 "-"、限制 63 字元
-          SAN_BRANCH=$(printf '%s' "$RAW_BRANCH" \
+          SAN_BRANCH=$(printf '%s' "$TRIMMED_BRANCH" \
             | tr '[:upper:]' '[:lower:]' \
             | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//' \
             | cut -c1-63 \
@@ -71,6 +74,7 @@ jobs:
 
           echo "BRANCH_NAME=${SAN_BRANCH}" >> "$GITHUB_ENV"
           echo "🔖 Branch (raw):       ${RAW_BRANCH}"
+          echo "🔖 Branch (no prefix): ${TRIMMED_BRANCH}"
           echo "🔖 Branch (sanitized): ${SAN_BRANCH}"
 
       - name: Prepare deploy directory
