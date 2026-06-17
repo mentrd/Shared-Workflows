@@ -38,7 +38,6 @@ jobs:
     environment: ${{ inputs.environment }}
 
     env:
-      DEPLOY_DIR: /data/${{ inputs.stack_name }}
       ENV_FILE: deploy/${{ inputs.environment }}.env
 
     steps:
@@ -56,12 +55,62 @@ jobs:
             exit 1
           fi
 
+      - name: Resolve branch name and deploy directory
+        run: |
+          # 使用 GitHub 內建環境變數：PR 取 GITHUB_HEAD_REF（來源分支），其餘取 GITHUB_REF_NAME
+          # 註：pull_request 事件下 GITHUB_REF_NAME 會是 "<PR編號>/merge"，故 PR 需用 GITHUB_HEAD_REF
+          RAW_BRANCH="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
+
+          # 去掉開頭的 preview/ 前綴（例如 preview/payment-test → payment-test）
+          TRIMMED_BRANCH="${RAW_BRANCH#preview/}"
+
+          # 正規化為合法的 DNS label：轉小寫、非英數字元轉為 "-"、去除頭尾 "-"、限制 63 字元
+          SAN_BRANCH=$(printf '%s' "$TRIMMED_BRANCH" \
+            | tr '[:upper:]' '[:lower:]' \
+            | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//' \
+            | cut -c1-63 \
+            | sed -E 's/-+$//')
+
+          echo "BRANCH_NAME=${SAN_BRANCH}" >> "$GITHUB_ENV"
+          echo "🔖 Branch (raw):       ${RAW_BRANCH}"
+          echo "🔖 Branch (no prefix): ${TRIMMED_BRANCH}"
+          echo "🔖 Branch (sanitized): ${SAN_BRANCH}"
+
+          # ── 設定 DEPLOY_DIR 和 STACK_NAME（preview 環境補上 branch name）──
+          BASE_STACK_NAME="${{ inputs.stack_name }}"
+          if [ "${{ inputs.environment }}" = "preview" ]; then
+            if [ -z "${SAN_BRANCH}" ]; then
+              echo "❌ preview 環境需要 branch name，但解析結果為空"
+              exit 1
+            fi
+            FINAL_STACK_NAME="${BASE_STACK_NAME}-${SAN_BRANCH}"
+            echo "✅ preview 環境，STACK_NAME 補上 branch name：${FINAL_STACK_NAME}"
+          else
+            FINAL_STACK_NAME="${BASE_STACK_NAME}"
+          fi
+
+          DEPLOY_DIR="/data/${FINAL_STACK_NAME}"
+          echo "DEPLOY_DIR=${DEPLOY_DIR}" >> "$GITHUB_ENV"
+          echo "FINAL_STACK_NAME=${FINAL_STACK_NAME}" >> "$GITHUB_ENV"
+          echo "📁 Deploy directory: ${DEPLOY_DIR}"
+          echo "📦 Stack name: ${FINAL_STACK_NAME}"
+
       - name: Prepare deploy directory
         run: |
           rm -rf ${{ env.DEPLOY_DIR }}
           mkdir -p ${{ env.DEPLOY_DIR }}
           cp ${{ inputs.compose_file }} ${{ env.DEPLOY_DIR }}/docker-stack.yml
           cp ${{ env.ENV_FILE }} ${{ env.DEPLOY_DIR }}/.env
+
+          # ── 更新 .env 中的 STACK_NAME（使用已計算好的 FINAL_STACK_NAME）──
+          if grep -qE '^STACK_NAME=' "${{ env.DEPLOY_DIR }}/.env"; then
+            sed -i -E "s|^STACK_NAME=.*$|STACK_NAME=${{ env.FINAL_STACK_NAME }}|" "${{ env.DEPLOY_DIR }}/.env"
+            echo "✅ 已更新 .env 中的 STACK_NAME 為：${{ env.FINAL_STACK_NAME }}"
+          else
+            echo "STACK_NAME=${{ env.FINAL_STACK_NAME }}" >> ${{ env.DEPLOY_DIR }}/.env
+            echo "✅ 已新增 STACK_NAME 至 .env：${{ env.FINAL_STACK_NAME }}"
+          fi
+
           echo "IMAGE_FULL_NAME=${{ inputs.image_full_name }}" >> ${{ env.DEPLOY_DIR }}/.env
           echo "APOLLO_SECRET=${{ secrets.apollo_secret }}" >> ${{ env.DEPLOY_DIR }}/.env          
 
