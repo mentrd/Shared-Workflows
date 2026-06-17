@@ -148,6 +148,7 @@ jobs:
           echo "image_tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "image_full_name=${IMAGE}:${TAG}" >> "$GITHUB_OUTPUT"
           echo "image_branch_sha8=${IMAGE}:${BRANCH_SHA8}" >> "$GITHUB_OUTPUT"
+          echo "branch_name=${BRANCH}" >> "$GITHUB_OUTPUT"
           echo "🔖 Branch (raw): ${RAW_BRANCH}"
           echo "🔖 Branch (sanitized): ${BRANCH}"
 
@@ -220,6 +221,7 @@ jobs:
             ${{ inputs.harbor_url }}/${{ inputs.harbor_project }}/${{ inputs.image_name }}:latest
           build-args: |
             BUILD_TIME=${{ steps.build_time.outputs.value }}
+            BRANCH_NAME=${{ steps.meta.outputs.branch_name }}
             ${{ inputs.base_image_enabled && format('BASE_IMAGE={0}', steps.base.outputs.base_ref) || '' }}
             ${{ inputs.app_id != '' && format('APP_ID={0}', inputs.app_id) || '' }}
             ${{ inputs.environment != '' && format('ENV_TAG={0}', inputs.environment) || '' }}
