@@ -133,12 +133,23 @@ jobs:
           if [ -z "$TAG" ]; then
             TAG="${GITHUB_SHA::8}"
           fi
-          BRANCH="${GITHUB_REF_NAME//\//-}"
+
+          # ── 解析 branch name（參考 deploy-swarm 作法）──
+          RAW_BRANCH="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
+          TRIMMED_BRANCH="${RAW_BRANCH#preview/}"
+          BRANCH=$(printf '%s' "$TRIMMED_BRANCH" \
+            | tr '[:upper:]' '[:lower:]' \
+            | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//' \
+            | cut -c1-63 \
+            | sed -E 's/-+$//')
+
           BRANCH_SHA8="${BRANCH}-${GITHUB_SHA::8}"
           IMAGE="${{ inputs.harbor_url }}/${{ inputs.harbor_project }}/${{ inputs.image_name }}"
           echo "image_tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "image_full_name=${IMAGE}:${TAG}" >> "$GITHUB_OUTPUT"
           echo "image_branch_sha8=${IMAGE}:${BRANCH_SHA8}" >> "$GITHUB_OUTPUT"
+          echo "🔖 Branch (raw): ${RAW_BRANCH}"
+          echo "🔖 Branch (sanitized): ${BRANCH}"
 
       - name: Log in to Harbor registry
         uses: docker/login-action@v3
