@@ -34,7 +34,7 @@ on:
 jobs:
   deploy:
     name: 🚀 Deploy Stack
-    runs-on: ${{ fromJSON(inputs.environment == 'prod' && '["self-hosted","gcp-swarm"]' || '["self-hosted","ment-swarm"]') }}
+    runs-on: ${{ fromJSON((inputs.environment == 'prod' || inputs.environment == 'pre') && '["self-hosted","gcp-swarm"]' || '["self-hosted","ment-swarm"]') }}
     environment: ${{ inputs.environment }}
 
     env:
