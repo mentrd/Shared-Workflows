@@ -26,6 +26,11 @@ on:
         required: false
         type: string
         default: '180'
+      harbor_url:
+        description: 'Harbor 的網址 (例如 harbor.example.com)'
+        required: false
+        type: string
+        default: harbor.ment-tech.com
     secrets:
       apollo_secret:
         description: 'Apollo Config Service secret (if needed)'
