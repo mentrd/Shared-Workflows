@@ -31,6 +31,11 @@ on:
         required: false
         type: string
         default: harbor.ment-tech.com
+      deploy_preview:
+        description: 'preview 部署開關：預設關閉，需明確設為 true 才會部署 preview 環境'
+        required: false
+        type: boolean
+        default: false
     secrets:
       apollo_secret:
         description: 'Apollo Config Service secret (if needed)'
@@ -39,6 +44,7 @@ on:
 jobs:
   deploy:
     name: 🚀 Deploy Stack
+    if: ${{ inputs.environment != 'preview' || inputs.deploy_preview }}
     runs-on: ${{ fromJSON((inputs.environment == 'prod' || inputs.environment == 'pre') && '["self-hosted","gcp-swarm"]' || '["self-hosted","ment-swarm"]') }}
     environment: ${{ inputs.environment }}
 
