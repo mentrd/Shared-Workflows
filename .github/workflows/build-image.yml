@@ -16,7 +16,7 @@ on:
         required: true
         type: string
       image_tag:
-        description: 'Docker image tag (defaults to the short commit SHA)'
+        description: 'Docker image tag (defaults to the short commit SHA, prefixed with environment when set, e.g. prod-a1b2c3d4)'
         required: false
         type: string
         default: ''
@@ -134,6 +134,13 @@ jobs:
             TAG="${GITHUB_SHA::8}"
           fi
 
+          # ── 以 environment 當作 tag 前綴，避免同一個 commit 在 dev/prod 產生同一個 tag ──
+          ENV_PREFIX=""
+          if [ -n "${{ inputs.environment }}" ]; then
+            ENV_PREFIX="${{ inputs.environment }}-"
+          fi
+          TAG="${ENV_PREFIX}${TAG}"
+
           # ── 解析 branch name（參考 deploy-swarm 作法）──
           RAW_BRANCH="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
           TRIMMED_BRANCH="${RAW_BRANCH#preview/}"
@@ -143,11 +150,13 @@ jobs:
             | cut -c1-63 \
             | sed -E 's/-+$//')
 
-          BRANCH_SHA8="${BRANCH}-${GITHUB_SHA::8}"
+          BRANCH_SHA8="${ENV_PREFIX}${BRANCH}-${GITHUB_SHA::8}"
+          LATEST_TAG="${ENV_PREFIX}latest"
           IMAGE="${{ inputs.harbor_url }}/${{ inputs.harbor_project }}/${{ inputs.image_name }}"
           echo "image_tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "image_full_name=${IMAGE}:${TAG}" >> "$GITHUB_OUTPUT"
           echo "image_branch_sha8=${IMAGE}:${BRANCH_SHA8}" >> "$GITHUB_OUTPUT"
+          echo "image_latest=${IMAGE}:${LATEST_TAG}" >> "$GITHUB_OUTPUT"
           echo "branch_name=${BRANCH}" >> "$GITHUB_OUTPUT"
           echo "🔖 Branch (raw): ${RAW_BRANCH}"
           echo "🔖 Branch (sanitized): ${BRANCH}"
@@ -218,7 +227,7 @@ jobs:
           tags: |
             ${{ steps.meta.outputs.image_full_name }}
             ${{ steps.meta.outputs.image_branch_sha8 }}
-            ${{ inputs.harbor_url }}/${{ inputs.harbor_project }}/${{ inputs.image_name }}:latest
+            ${{ steps.meta.outputs.image_latest }}
           build-args: |
             BUILD_TIME=${{ steps.build_time.outputs.value }}
             BRANCH_NAME=${{ steps.meta.outputs.branch_name }}
