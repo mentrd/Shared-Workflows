@@ -44,7 +44,7 @@ on:
 jobs:
   deploy:
     name: 🚀 Deploy Stack
-    if: ${{ inputs.environment != 'preview' || inputs.deploy_preview }}
+    if: ${{ inputs.environment != 'preview' }}
     runs-on: ${{ fromJSON((inputs.environment == 'prod' || inputs.environment == 'pre') && '["self-hosted","gcp-swarm"]' || '["self-hosted","ment-swarm"]') }}
     environment: ${{ inputs.environment }}
 

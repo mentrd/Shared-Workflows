@@ -54,6 +54,7 @@ on:
 jobs:
   normalize-target-host:
     name: Normalize target hosts input
+    if: ${{ inputs.environment != 'preview' }}
     runs-on: ${{ fromJSON(inputs.environment == 'prod' && '["self-hosted","ment-gcp"]' || '["self-hosted","ment-runner"]') }}
     outputs:
       target_hosts_json: ${{ steps.normalize.outputs.target_hosts_json }}
@@ -104,6 +105,7 @@ jobs:
 
   deploy:
     name: 🚀 Deploy Image via SSH (${{ matrix.target_host }})
+    if: ${{ inputs.environment != 'preview' }}
     needs: normalize-target-host
     runs-on: ${{ fromJSON(inputs.environment == 'prod' && '["self-hosted","ment-gcp"]' || '["self-hosted","ment-runner"]') }}
     environment: ${{ inputs.environment }}
